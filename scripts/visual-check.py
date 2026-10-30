@@ -55,7 +55,7 @@ with sync_playwright() as p:
         errors = []
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
         page.on("pageerror", lambda e: errors.append(str(e)))
-        page.goto(BASE, wait_until="networkidle")
+        page.goto(BASE, wait_until="load", timeout=90000)
         page.wait_for_function("window.__celestialClock !== undefined", timeout=30000)
         page.wait_for_timeout(1500)
         page.screenshot(path=f"{OUT}/{name}-live.png", full_page=True)
@@ -76,7 +76,7 @@ with sync_playwright() as p:
     ]
     ctx = browser.new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=1, timezone_id="Asia/Singapore")
     page = ctx.new_page()
-    page.goto(BASE, wait_until="networkidle")
+    page.goto(BASE, wait_until="load", timeout=90000)
     page.wait_for_function("window.__celestialClock !== undefined", timeout=30000)
     for label, date, planet, expect in cases:
         page.get_by_role("radio", name=planet.capitalize()).click()
@@ -87,6 +87,61 @@ with sync_playwright() as p:
         print(label, planet, json.dumps(report))
         check(f"{label}/{planet}", report, expect)
     ctx.close()
+
+    # Observer tests: four cities at fixed instants, Earth and Moon panels
+    cities = {
+        "singapore": "lat=1.2903&lon=103.852&tz=Asia/Singapore&name=Singapore",
+        "london": "lat=51.5074&lon=-0.1278&tz=Europe/London&name=London",
+        "new-york": "lat=40.7128&lon=-74.006&tz=America/New_York&name=New%20York",
+        "sydney": "lat=-33.8688&lon=151.2093&tz=Australia/Sydney&name=Sydney",
+    }
+    for city, q in cities.items():
+        for t in ("2026-06-21T11:30:00Z", "2026-11-12T22:30:00Z"):
+            ctx = browser.new_context(viewport={"width": 1440, "height": 900})
+            page = ctx.new_page()
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(f"{BASE}?{q}&t={t}", wait_until="load", timeout=90000)
+            page.wait_for_timeout(2500)
+            page.locator(".telemetry").screenshot(path=f"{OUT}/telemetry-{city}-{t[:10]}.png")
+            name = page.locator(".location-name").inner_text()
+            if errors:
+                failures.append(f"{city}: page errors {errors[:2]}")
+            print(city, t, name)
+            ctx.close()
+
+    # Location permission granted and denied
+    ctx = browser.new_context(viewport={"width": 390, "height": 844}, permissions=["geolocation"], geolocation={"latitude": 48.8566, "longitude": 2.3522}, timezone_id="Europe/Paris")
+    page = ctx.new_page()
+    page.goto(BASE, wait_until="load", timeout=90000)
+    page.wait_for_timeout(1500)
+    if page.locator(".location-name").inner_text() != "Your location":
+        failures.append("granted permission: device location not used automatically")
+    ctx.close()
+    ctx = browser.new_context(viewport={"width": 390, "height": 844}, timezone_id="Europe/Paris")
+    page = ctx.new_page()
+    page.goto(BASE, wait_until="load", timeout=90000)
+    page.wait_for_timeout(1000)
+    if "Approximate" not in page.locator(".location-meta").inner_text():
+        failures.append("no permission: approximate location not labelled")
+    page.get_by_role("button", name="Use my location").click()
+    page.wait_for_timeout(1500)
+    if page.locator(".location-note").count() == 0:
+        failures.append("denied permission: no explanation shown")
+    page.get_by_label("City").select_option("Sydney")
+    page.wait_for_timeout(500)
+    if page.locator(".location-name").inner_text() != "Sydney":
+        failures.append("city selection failed")
+    # Playback: one year per second should advance the year
+    y0 = int(page.get_by_role("spinbutton", name="Year").input_value())
+    page.get_by_role("radio", name="1 year/s").click()
+    page.wait_for_timeout(2600)
+    y1 = int(page.get_by_role("spinbutton", name="Year").input_value())
+    if y1 - y0 < 2:
+        failures.append(f"playback at 1 year/s moved {y1 - y0} years in 2.6 s")
+    page.screenshot(path=f"{OUT}/iphone-playback.png")
+    ctx.close()
+
     browser.close()
 
 if failures:

@@ -317,6 +317,7 @@ function PlanetsAndHands({
       const h = helioEcliptic(p.body, t)
       const s = projectHelio(h.lon, h.rho)
       o.root.position.set(s.x, s.y, s.z)
+      if (o.ringShadow) o.ringShadow.uPlanetCentre.value.copy(o.root.position) // Sun stays at the origin
       applyBodyAxes(o.body, bodyAxes(p.body, t))
       if (p.id === 'earth') earthLon = h.lon
       if (p.id === yearPlanet) {

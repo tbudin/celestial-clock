@@ -47,7 +47,18 @@ function ringGeometry(inner: number, outer: number): THREE.BufferGeometry {
   return g
 }
 
+export interface RingShadowUniforms {
+  /** Planet centre, world space */
+  uPlanetCentre: { value: THREE.Vector3 }
+  /** Planet radius, world units */
+  uPlanetRadius: { value: number }
+  /** Sun position, world space (far away for a directional light) */
+  uSunPos: { value: THREE.Vector3 }
+}
+
 export interface PlanetObject {
+  /** Present for Saturn: update each frame so the globe's shadow falls on the rings */
+  ringShadow?: RingShadowUniforms
   /** Positioned in the orrery (translation only) */
   root: THREE.Group
   /** Oriented to the body's real pole and prime meridian */
@@ -74,6 +85,7 @@ export function createPlanetObject(id: PlanetId, textures: TextureSet, segments 
   body.add(mesh)
 
   const disposables: Array<{ dispose: () => void }> = [material]
+  let ringShadow: RingShadowUniforms | undefined
 
   if (id === 'saturn') {
     const ringMap = textures.saturnRing
@@ -90,6 +102,38 @@ export function createPlanetObject(id: PlanetId, textures: TextureSet, segments 
       emissiveMap: ringMap ?? null,
       emissiveIntensity: 0.12,
     })
+    ringShadow = {
+      uPlanetCentre: { value: new THREE.Vector3() },
+      uPlanetRadius: { value: radius },
+      uSunPos: { value: new THREE.Vector3() },
+    }
+    const u = ringShadow
+    ringMat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, u)
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vRingWorld;')
+        .replace('#include <project_vertex>', '#include <project_vertex>\nvRingWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;')
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          '#include <common>',
+          `#include <common>
+          varying vec3 vRingWorld;
+          uniform vec3 uPlanetCentre; uniform float uPlanetRadius; uniform vec3 uSunPos;
+          float ringShadowFactor() {
+            // Ray from this ring point towards the Sun: does it hit the globe?
+            vec3 d = normalize(uSunPos - vRingWorld);
+            vec3 oc = vRingWorld - uPlanetCentre;
+            float b = dot(oc, d);
+            float c = dot(oc, oc) - uPlanetRadius * uPlanetRadius;
+            float h = b * b - c;
+            if (h <= 0.0 || b > 0.0) return 1.0;
+            // Soften the umbra edge slightly
+            return mix(1.0, 0.08, smoothstep(0.0, 0.05 * uPlanetRadius * uPlanetRadius, h));
+          }`,
+        )
+        .replace('#include <map_fragment>', '#include <map_fragment>\nfloat rsf = ringShadowFactor();\ndiffuseColor.rgb *= rsf;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= rsf;')
+    }
     const ringGeo = ringGeometry(radius * SATURN_RING_INNER, radius * SATURN_RING_OUTER)
     const ring = new THREE.Mesh(ringGeo, ringMat)
     ring.renderOrder = 2
@@ -97,7 +141,7 @@ export function createPlanetObject(id: PlanetId, textures: TextureSet, segments 
     disposables.push(ringMat, ringGeo)
   }
 
-  return { root, body, dispose: () => disposables.forEach((d) => d.dispose()) }
+  return { root, body, ringShadow, dispose: () => disposables.forEach((d) => d.dispose()) }
 }
 
 const _m = new THREE.Matrix4()
@@ -111,9 +155,18 @@ const _z = new THREE.Vector3()
  * pole at local +Y; east longitude 90° falls at local -Z.
  */
 export function applyBodyAxes(target: THREE.Object3D, axes: BodyAxes) {
-  const px = eclipticDirToScene(axes.x)
-  const py = eclipticDirToScene(axes.y)
-  const pz = eclipticDirToScene(axes.z)
+  applyAxesInWorld(target, {
+    x: eclipticDirToScene(axes.x),
+    y: eclipticDirToScene(axes.y),
+    z: eclipticDirToScene(axes.z),
+  })
+}
+
+/** Same as applyBodyAxes, for axes already expressed in world coordinates. */
+export function applyAxesInWorld(target: THREE.Object3D, axes: BodyAxes) {
+  const px = axes.x
+  const py = axes.y
+  const pz = axes.z
   _x.set(px.x, px.y, px.z)
   _y.set(pz.x, pz.y, pz.z)
   _z.set(-py.x, -py.y, -py.z)

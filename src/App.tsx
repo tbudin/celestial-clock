@@ -1,34 +1,133 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PLANET_BY_ID, YEAR_SCALES, type YearPlanetId } from './astro/bodies'
 import { calendarScale, yearScale } from './astro/clockScales'
-import { browserTimeZone, civilParts, dayOfYear, MONTH_NAMES, zonedToUtc } from './astro/time'
+import { approximatePlace, isValidTimeZone, type Place } from './astro/places'
+import { browserTimeZone, civilParts, dayOfYear, MONTH_NAMES, zonedToUtc, zoneOffsetMs } from './astro/time'
 import { Orrery } from './render/Orrery'
 import { loadTextures, type TextureKey, type TextureSet } from './render/textures'
 import { renderThumbnails } from './render/thumbnails'
+import { EarthPanel, zoneLabel } from './ui/EarthPanel'
+import { LocationPicker } from './ui/LocationPicker'
+import { MoonPanel } from './ui/MoonPanel'
 import { PlanetSelector } from './ui/PlanetSelector'
 import { TimeControls } from './ui/TimeControls'
 import { useClockState, useSimNow } from './ui/hooks'
+import { simClock } from './sim/clock'
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const pad = (n: number) => String(n).padStart(2, '0')
 
-function zoneLabel(tz: string, at: number) {
-  try {
-    const parts = new Intl.DateTimeFormat('en-GB', { timeZone: tz, timeZoneName: 'shortOffset' }).formatToParts(new Date(at))
-    return parts.find((p) => p.type === 'timeZoneName')?.value ?? tz
-  } catch {
-    return tz
+export type ViewMode = 'full' | 'ambient' | 'orrery' | 'earth' | 'moon'
+const PLANET_IDS: YearPlanetId[] = ['jupiter', 'saturn', 'uranus', 'neptune']
+
+/** URL options, for embedding and ambient displays. See README. */
+function readParams() {
+  const q = new URLSearchParams(window.location.search)
+  const view = (q.get('view') ?? 'full') as ViewMode
+  const planet = q.get('planet') as YearPlanetId | null
+  const tzParam = q.get('tz')
+  const lat = q.get('lat')
+  const lon = q.get('lon')
+  let place: Place | null = null
+  const tz = tzParam && isValidTimeZone(tzParam) ? tzParam : null
+  if (lat !== null && lon !== null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lon))) {
+    place = {
+      name: q.get('name') ?? `${Number(lat).toFixed(2)}, ${Number(lon).toFixed(2)}`,
+      latitude: Math.max(-90, Math.min(90, Number(lat))),
+      longitude: Math.max(-180, Math.min(180, Number(lon))),
+      timeZone: tz ?? browserTimeZone(),
+      source: 'custom',
+    }
+  }
+  // ?t=2026-03-20T12:00:00Z starts the clock at that instant (still running)
+  const t = q.get('t')
+  if (t && Number.isFinite(Date.parse(t))) simClock.setTime(Date.parse(t))
+  return {
+    view: (['full', 'ambient', 'orrery', 'earth', 'moon'] as ViewMode[]).includes(view) ? view : 'full',
+    planet: planet && PLANET_IDS.includes(planet) ? planet : 'jupiter',
+    place,
+    tz,
   }
 }
 
-export default function App() {
-  const tz = useMemo(() => browserTimeZone(), [])
+type GeoStatus = 'idle' | 'pending' | 'denied' | 'unavailable' | 'granted'
+
+function usePlace(initial: Place | null, tzOverride: string | null) {
+  const [place, setPlace] = useState<Place>(() => {
+    if (initial) return initial
+    const tz = tzOverride ?? browserTimeZone()
+    return approximatePlace(tz, zoneOffsetMs(Date.now(), tz) / 60000)
+  })
+  const [geo, setGeo] = useState<GeoStatus>('idle')
+
+  const requestDevice = useCallback(() => {
+    if (!('geolocation' in navigator)) {
+      setGeo('unavailable')
+      return
+    }
+    setGeo('pending')
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGeo('granted')
+        setPlace({
+          name: 'Your location',
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          timeZone: browserTimeZone(),
+          source: 'device',
+        })
+      },
+      (err) => setGeo(err.code === err.PERMISSION_DENIED ? 'denied' : 'unavailable'),
+      { enableHighAccuracy: false, maximumAge: 600000, timeout: 15000 },
+    )
+  }, [])
+
+  // Use the device location automatically only when permission is already granted
+  useEffect(() => {
+    if (initial) return
+    navigator.permissions
+      ?.query({ name: 'geolocation' as PermissionName })
+      .then((s) => {
+        if (s.state === 'granted') requestDevice()
+        else if (s.state === 'denied') setGeo('denied')
+      })
+      .catch(() => {})
+  }, [initial, requestDevice])
+
+  return { place, setPlace, geo, requestDevice }
+}
+
+export interface CelestialClockProps {
+  /** Which parts to show. Defaults to the URL's ?view= or 'full'. */
+  view?: ViewMode
+  /** Year-hand planet. Defaults to ?planet= or Jupiter. */
+  planet?: YearPlanetId
+  /** Observer. Defaults to ?lat=&lon=, the device location if already permitted, or an approximation from the time zone. */
+  place?: Place
+  /** Read options from the page URL (default true; set false when embedding as a component). */
+  useUrl?: boolean
+}
+
+export default function App(props: CelestialClockProps = {}) {
+  const params = useMemo(() => {
+    const url = props.useUrl === false ? { view: 'full' as ViewMode, planet: 'jupiter' as YearPlanetId, place: null, tz: null } : readParams()
+    return {
+      view: props.view ?? url.view,
+      planet: props.planet ?? url.planet,
+      place: props.place ?? url.place,
+      tz: url.tz,
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const { place, setPlace, geo, requestDevice } = usePlace(params.place, params.tz)
+  const tz = place.timeZone
   const now = useSimNow(100)
   const clock = useClockState()
   const parts = civilParts(now, tz)
   const doy = dayOfYear(parts.year, parts.month, parts.day)
+  const view = params.view
 
-  const [yearPlanet, setYearPlanet] = useState<YearPlanetId>('jupiter')
+  const [yearPlanet, setYearPlanet] = useState<YearPlanetId>(params.planet)
   const [textures, setTextures] = useState<TextureSet | null>(null)
   const [failed, setFailed] = useState<TextureKey[]>([])
   const [thumbs, setThumbs] = useState<Partial<Record<YearPlanetId, string>>>({})
@@ -46,71 +145,102 @@ export default function App() {
     }
   }, [])
 
+  useEffect(() => {
+    document.documentElement.dataset.view = view
+  }, [view])
+
   const calendar = useMemo(() => calendarScale(parts.year, tz), [parts.year, tz])
   const yScale = useMemo(() => yearScale(yearPlanet, parts.year, tz), [yearPlanet, parts.year, tz])
   const orbitEpochMs = useMemo(() => zonedToUtc(tz, parts.year, 7, 1), [parts.year, tz])
-
   const planet = PLANET_BY_ID[yearPlanet]
 
+  const showTelemetry = view === 'full' || view === 'ambient' || view === 'earth' || view === 'moon'
+  const showOrrery = view === 'full' || view === 'ambient' || view === 'orrery'
+  const showControls = view === 'full'
+
   return (
-    <main className="app">
-      <header className="masthead">
-        <h1>Celestial Clock</h1>
-        <span className="masthead-note">{clock.live ? 'Live' : clock.playing ? 'Simulating' : 'Paused'}</span>
-      </header>
+    <main className={`app view-${view}`}>
+      {view === 'full' && (
+        <header className="masthead">
+          <h1>Celestial Clock</h1>
+          <span className="masthead-note">{clock.live ? 'Live' : clock.playing ? 'Simulating' : 'Paused'}</span>
+        </header>
+      )}
 
-      <section className="orrery-section" aria-label="Solar system clock">
-        <div className="readouts">
-          <div className="readout readout-date">
-            <span className="readout-label">Date · Earth</span>
-            <span className="readout-value">
-              {parts.day} {MONTH_NAMES[parts.month - 1]}
-            </span>
-            <span className="readout-sub mono">
-              {WEEKDAYS[parts.weekday]} · day {doy} · {pad(parts.hour)}:{pad(parts.minute)}:{pad(parts.second)} {zoneLabel(tz, now)}
-            </span>
-          </div>
-          <div className="readout readout-year">
-            <span className="readout-label">Year · {planet.name}</span>
-            <span className="readout-value mono gold">{parts.year}</span>
-            <span className="readout-sub">
-              {YEAR_SCALES[yearPlanet].labelInterval === 1 ? 'Labelled yearly' : `Labelled every ${YEAR_SCALES[yearPlanet].labelInterval}`}
-              <span className="wide-only"> · scale {yScale.fromYear}–{yScale.toYear}</span>
-            </span>
-          </div>
-        </div>
+      {showControls && <LocationPicker place={place} onChange={setPlace} onUseDevice={requestDevice} geoStatus={geo} />}
 
-        <div className="orrery-canvas">
-          {textures ? (
-            <Orrery
-              textures={textures}
-              calendar={calendar}
-              yearScale={yScale}
-              yearPlanet={yearPlanet}
-              currentDayIndex={doy - 1}
-              currentMonth={parts.month}
-              orbitEpochMs={orbitEpochMs}
-            />
-          ) : (
-            <div className="loading">Loading textures…</div>
+      {showTelemetry && (
+        <section className={`telemetry ${view === 'earth' || view === 'moon' ? 'single' : ''}`} aria-label="Earth and Moon telemetry">
+          {view !== 'moon' && <EarthPanel place={place} now={now} />}
+          {view !== 'earth' && <MoonPanel place={place} now={now} />}
+        </section>
+      )}
+
+      {showOrrery && (
+        <section className="orrery-section" aria-label="Solar system clock">
+          <div className="readouts">
+            <div className="readout readout-date">
+              <span className="readout-label">Date · Earth</span>
+              <span className="readout-value">
+                {parts.day} {MONTH_NAMES[parts.month - 1]}
+              </span>
+              <span className="readout-sub mono">
+                {WEEKDAYS[parts.weekday]} · day {doy} · {pad(parts.hour)}:{pad(parts.minute)} {zoneLabel(tz, now)}
+              </span>
+            </div>
+            <div className="readout readout-year">
+              <span className="readout-label">Year · {planet.name}</span>
+              <span className="readout-value mono gold">{parts.year}</span>
+              <span className="readout-sub">
+                {YEAR_SCALES[yearPlanet].labelInterval === 1 ? 'Labelled yearly' : `Labelled every ${YEAR_SCALES[yearPlanet].labelInterval}`}
+                <span className="wide-only">
+                  {' '}
+                  · scale {yScale.fromYear}–{yScale.toYear}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <div className="orrery-canvas">
+            {textures ? (
+              <Orrery
+                textures={textures}
+                calendar={calendar}
+                yearScale={yScale}
+                yearPlanet={yearPlanet}
+                currentDayIndex={doy - 1}
+                currentMonth={parts.month}
+                orbitEpochMs={orbitEpochMs}
+              />
+            ) : (
+              <div className="loading">Loading textures…</div>
+            )}
+          </div>
+
+          {failed.length > 0 && (
+            <p className="warning" role="alert">
+              Some textures failed to load ({failed.join(', ')}). Plain materials are shown instead.
+            </p>
           )}
-        </div>
 
-        {failed.length > 0 && (
-          <p className="warning" role="alert">
-            Some textures failed to load ({failed.join(', ')}). Plain materials are shown instead.
-          </p>
-        )}
+          {view === 'full' && (
+            <p className="scale-note">
+              Directions are exact; distances are compressed and planet sizes enlarged for legibility. Calendar in {tz}.
+            </p>
+          )}
+        </section>
+      )}
 
-        <p className="scale-note">
-          Directions are exact; distances are compressed and planet sizes enlarged for legibility. Time zone: {tz}.
-        </p>
-      </section>
-
-      <section className="controls-section" aria-label="Controls">
-        <PlanetSelector value={yearPlanet} onChange={setYearPlanet} thumbnails={thumbs} />
-        <TimeControls parts={parts} tz={tz} doy={doy} />
-      </section>
+      {showControls && (
+        <section className="controls-section" aria-label="Controls">
+          <PlanetSelector value={yearPlanet} onChange={setYearPlanet} thumbnails={thumbs} />
+          <TimeControls parts={parts} tz={tz} doy={doy} />
+          <footer className="credits">
+            Ephemerides: Astronomy Engine (VSOP87, IAU 2015 rotation models). Textures: Solar System Scope (CC BY 4.0) and NASA Earth at night.{' '}
+            <a href="/?view=ambient">Ambient mode</a>
+          </footer>
+        </section>
+      )}
     </main>
   )
 }

@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "allowImportingTsExtensions": false,
+    "outDir": "dist-lib/types",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.lib.tsbuildinfo"
+  },
+  "include": ["src/astro", "src/geometry", "src/lib", "src/sim", "src/render", "src/ui", "src/App.tsx", "src/vite-env.d.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

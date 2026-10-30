@@ -25,3 +25,4 @@ dist-ssr
 
 screenshots/
 __pycache__/
+dist-lib/

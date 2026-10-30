@@ -48,6 +48,7 @@ export function renderThumbnails(textures: TextureSet, timeMs: number, sizePx = 
     const light = new THREE.DirectionalLight(0xffffff, 3.2)
     light.position.copy(h).multiplyScalar(1.2).addScaledVector(side, -1.6).add(new THREE.Vector3(0, 0.3, 0))
     scene.add(light, new THREE.AmbientLight(0xffffff, 0.05))
+    if (obj.ringShadow) obj.ringShadow.uSunPos.value.copy(light.position).multiplyScalar(1000)
     renderer.render(scene, cam)
     out[id] = canvas.toDataURL('image/png')
     obj.dispose()
