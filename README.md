@@ -82,7 +82,7 @@ The Earth and Moon panels work in the J2000 equatorial frame: each body carries 
 ## Accuracy
 
 - Ephemeris: [Astronomy Engine](https://github.com/cosinekitty/astronomy) (VSOP87 for planets, about 1 arcminute; its lunar theory for the Moon).
-- Orientation: IAU WGCCRE 2015 rotation models. For Earth this simplified model is about 0.5° from the full precession-nutation model, which shows only as a sub-pixel shift of the globe.
+- Orientation: IAU WGCCRE 2015 rotation models. For Earth this simplified model is about 0.5° from the full precession-nutation model, which shifts the globe by about 1 to 2 px at panel size.
 - Tested: Earth at equinoxes and solstices (within 0.02°); equinox and solstice times (within 2 min); five oppositions (within 1°); London sunrise and sunset on the 2026 solstice (within 2 min); polar night in Tromsø; equation of time; full and new Moon dates; the rendered bright limb against Meeus' bright-limb and parallactic-angle formulas in four cities (within 0.6°).
 - Supported range: years 1600 to 2400.
 - Not shown: ecliptic latitude in the orrery (the top-down view flattens it), atmospheric refraction in the Moon view, real-time clouds.
