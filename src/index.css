@@ -9,6 +9,7 @@
   --faint: #5d6880;
   --green: #79c99e;
   --gold: #d8b46a;
+  --hour: #a9c8ff;
   --sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
   color-scheme: dark;
@@ -102,68 +103,6 @@ input {
   letter-spacing: 0.06em;
 }
 
-.readouts {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 8px 4px;
-}
-
-.readout {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.readout-year {
-  text-align: right;
-  align-items: flex-end;
-}
-
-.readout-label {
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
-.readout-value {
-  font-size: 30px;
-  font-weight: 300;
-  line-height: 1.1;
-  letter-spacing: -0.01em;
-}
-
-.readout-value.gold {
-  color: var(--gold);
-}
-
-.readout-date .readout-value {
-  color: var(--text);
-}
-
-.readout-sub {
-  font-size: 12px;
-  color: var(--muted);
-}
-
-@media (min-width: 1024px) {
-  .readouts {
-    position: absolute;
-    inset: 24px 40px auto 40px;
-    padding: 0;
-    pointer-events: none;
-    z-index: 20;
-  }
-  .readout-value {
-    font-size: 40px;
-  }
-  .orrery-canvas {
-    height: min(88vh, 100vw);
-  }
-}
-
 .scale-note {
   margin: 4px auto 0;
   max-width: 720px;
@@ -183,17 +122,43 @@ input {
   font-size: 13px;
 }
 
-/* Labels drawn at scene positions */
+/* Orrery labels: one DOM layer, positioned by the layout engine */
+
+.orrery-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.label-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.label-layer .scale-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  will-change: transform;
+}
+
+.label-layer .scale-label[data-visible='true'] {
+  opacity: 1;
+}
 
 .scale-label {
   display: block;
   white-space: nowrap;
   font-family: var(--mono);
   font-size: 10.5px;
+  line-height: 1;
   letter-spacing: 0.08em;
   color: var(--muted);
   user-select: none;
-  transform: translateZ(0);
 }
 
 .scale-label.month.active {
@@ -202,14 +167,31 @@ input {
 }
 
 .scale-label.year {
-  color: rgba(216, 180, 106, 0.72);
+  color: rgba(216, 180, 106, 0.78);
   font-size: 10px;
 }
 
-.scale-label.year.active {
-  color: var(--gold);
+.scale-label.date-pill,
+.scale-label.year-pill {
+  padding: 4px 8px 3px;
+  border-radius: 999px;
+  font-size: 12px;
   font-weight: 500;
-  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: #04100a;
+  box-shadow: 0 0 0 3px var(--bg);
+}
+
+.scale-label.date-pill {
+  background: var(--green);
+  /* Fixed width: "1 JUL" and "30 JUN" take the same box, so the layout never works from a stale size */
+  min-width: calc(6ch + 16px);
+  text-align: center;
+}
+
+.scale-label.year-pill {
+  background: var(--gold);
+  color: #140d02;
 }
 
 @media (max-width: 480px) {
@@ -220,17 +202,108 @@ input {
   .scale-label.year {
     font-size: 8.5px;
   }
-  .scale-label.year.active {
-    font-size: 9.5px;
+  .scale-label.date-pill,
+  .scale-label.year-pill {
+    font-size: 10px;
+    padding: 3px 6px 2px;
   }
-  .readout-value {
-    font-size: 24px;
-  }
-  .readout-sub {
-    font-size: 11px;
+  .scale-label.date-pill {
+    min-width: calc(6ch + 12px);
   }
   .masthead {
     padding: 14px 16px 0;
+  }
+}
+
+/* Reading strip: the four readings, each keyed to the hand that shows it */
+
+.reading {
+  max-width: 1280px;
+  margin: 16px auto 0;
+  padding: 0 16px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.reading-cell {
+  position: relative;
+  padding: 12px 14px 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  min-width: 0;
+}
+
+.reading-cell::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--key);
+}
+
+.reading-cell.hour {
+  --key: var(--hour);
+}
+
+.reading-cell.day,
+.reading-cell.month {
+  --key: var(--green);
+}
+
+.reading-cell.year {
+  --key: var(--gold);
+}
+
+.reading-label {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.reading-value {
+  display: block;
+  margin-top: 4px;
+  font-size: 30px;
+  font-weight: 300;
+  line-height: 1.1;
+  color: var(--key);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reading-weekday {
+  font-size: 0.5em;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.reading-value .secs {
+  color: var(--muted);
+}
+
+.reading-source {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 760px) {
+  .reading {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .reading-value {
+    font-size: 24px;
   }
 }
 
@@ -606,6 +679,7 @@ input {
   width: 100%;
   height: 100%;
   pointer-events: none;
+  overflow: visible;
 }
 
 .dial-ring {
@@ -619,9 +693,34 @@ input {
   stroke-width: 0.8;
 }
 
+.dial-tick.hour {
+  stroke: #8e9ab0;
+  stroke-width: 1;
+}
+
 .dial-tick.major {
   stroke: #c9d2e0;
-  stroke-width: 1.2;
+  stroke-width: 1.4;
+}
+
+.dial-label.major {
+  fill: var(--text);
+  font-weight: 500;
+}
+
+.dial-window rect {
+  fill: var(--hour);
+  stroke: var(--bg);
+  stroke-width: 3;
+  paint-order: stroke;
+}
+
+.dial-window text {
+  fill: #050b16;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
 }
 
 .dial-label {
@@ -659,7 +758,7 @@ input {
 }
 
 .dial-hand {
-  stroke: var(--text);
+  stroke: var(--hour);
   stroke-width: 2;
   stroke-linecap: round;
 }
@@ -766,6 +865,21 @@ input {
 }
 
 @media (min-width: 1024px) {
+  .view-ambient .side {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 8px;
+    min-height: 0;
+  }
+  .view-ambient .reading {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin: 0;
+    padding: 0 0 0 24px;
+  }
+  .view-ambient .reading-value {
+    font-size: 26px;
+  }
   .view-ambient {
     display: grid;
     grid-template-columns: minmax(320px, 0.36fr) 1fr;

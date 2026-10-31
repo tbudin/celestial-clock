@@ -7,7 +7,17 @@ Live: https://celestial-clock.vercel.app
 
 ## Using it
 
-- **Earth panel:** the globe faces your location (green ring, always centred). The terminator comes from the Sun's computed direction. The 24-hour dial has noon at the top: the white hand is civil time, the gold dot is local apparent solar time, the gold arc is daylight (sunrise to sunset, civil time).
+Each reading has one colour and one hand, and the hand ends in a window showing the value:
+
+| Reading | Colour | Where to look |
+| --- | --- | --- |
+| Hour | blue | Earth panel: the hand on the 24-hour dial (noon at the top) |
+| Day and month | green | Orrery: the hand from the Sun through Earth to the calendar ring |
+| Year | gold | Orrery: the hand from the Sun through the selected planet to its year scale |
+
+The strip at the top repeats the four readings and names the body each one comes from.
+
+- **Earth panel:** the globe faces your location (green ring, always centred). The terminator comes from the Sun's computed direction. The 24-hour dial has noon at the top and a numeral for every hour: the blue hand is civil time, the gold dot is local apparent solar time, the gold arc is daylight (sunrise to sunset).
 - **Moon panel:** the Moon as it stands in your sky, zenith up. Phase, the angle of the bright limb, libration and northern/southern-hemisphere orientation all come from the geometry.
 - **Orrery:** green hand Sun → Earth → calendar ring reads the date; gold hand Sun → planet reads the year. Choose Jupiter, Saturn, Uranus or Neptune for the year hand.
 - **Location:** uses your device location only if permission is already granted (or you tap "Use my location"). Otherwise it uses a representative city for your time zone and labels it "Approximate". You can pick a city or type coordinates. Civil time follows the location's time zone; custom coordinates keep the current zone.
@@ -36,7 +46,7 @@ The site is installable (web app manifest): "Add to Home Screen" on iOS/Android 
 ```bash
 npm install
 npm run dev
-npm test             # 40 astronomy and geometry tests
+npm test             # 45 astronomy, geometry and layout tests
 npm run build        # site, to dist/
 npm run build:lib    # packages, to dist-lib/
 ```
@@ -77,7 +87,11 @@ The Earth and Moon panels work in the J2000 equatorial frame: each body carries 
 ### Calendar and year scales
 
 - **Calendar ring:** a tick at Earth's longitude at each local midnight (365 or 366 days). Not uniform: early-January days are about 7% wider than July days. Recomputed per year and time zone.
-- **Year scale:** the planet's longitude on 1 January of each year, in a window centred on the simulated year and always shorter than one orbit, so each position maps to one year. Jupiter labelled every year, Saturn every 5, Uranus every 10, Neptune every 20, with yearly minor ticks.
+- **Year scale:** the planet's longitude on 1 January of each year, starting at the current year and running forward, always shorter than one orbit, so each position maps to one year (Jupiter 2026 to 2036, Saturn to 2054, Uranus to 2109, Neptune to 2189). Jupiter labelled every year, Saturn every 5, Uranus every 10, Neptune every 20, with yearly minor ticks.
+
+### Labels never overlap
+
+All orrery labels live in one DOM layer above the canvas and are placed every frame by `src/geometry/labelLayout.ts`. Each label offers candidate positions; a position is used only if it stays inside the orrery and clears every placed label, the Sun, every planet (Saturn including its rings) and both hands. The hand windows are placed first and always shown; a scale label with no free position is hidden until one frees up. The visual check reads the real label boxes from the page and fails on any overlap, including in samples taken during fast playback for every year planet at phone and desktop sizes.
 
 ## Accuracy
 

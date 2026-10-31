@@ -53,7 +53,7 @@ export interface YearMarker {
 export interface YearScale {
   planet: YearPlanetId
   labelInterval: number
-  /** First and last year shown. The window spans less than one revolution, */
+  /** First (the simulated year) and last year shown. The window spans less than one revolution, */
   /** so every longitude on the scale maps to exactly one year. */
   fromYear: number
   toYear: number
@@ -61,17 +61,18 @@ export interface YearScale {
 }
 
 /**
- * Year markers for a planet: its longitude on 1 January of each year, within
- * a window centred on the simulated year and strictly shorter than one orbit.
- * That window is the cycle context that removes the one-revolution ambiguity.
+ * Year markers for a planet: its longitude on 1 January of each year, from the
+ * simulated year forwards, over a span strictly shorter than one orbit.
+ * Starting at the current year leaves the whole scale for the years ahead;
+ * keeping it under one revolution is the cycle context that removes the
+ * one-revolution ambiguity.
  */
 export function yearScale(planet: YearPlanetId, simYear: number, tz: string): YearScale {
   const spec = YEAR_SCALES[planet]
   const period = PLANET_BY_ID[planet].periodYears
-  // Number of whole years that fit in one revolution, minus a safety year
+  // Whole years that fit in one revolution, minus a safety year
   const span = Math.floor(period) - 1
-  const before = Math.floor(span / 2)
-  const fromYear = simYear - before
+  const fromYear = simYear
   const toYear = fromYear + span
   const markers: YearMarker[] = []
   for (let y = fromYear; y <= toYear; y++) {

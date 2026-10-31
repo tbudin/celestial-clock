@@ -53,7 +53,7 @@ export function EarthPanel({ place, now }: { place: Place; now: number }) {
   return (
     <article className="panel" aria-label="Earth telemetry">
       <header className="panel-head">
-        <span className="panel-kicker">Earth · hour</span>
+        <span className="panel-kicker">Hour · Earth’s rotation</span>
         <span className="panel-place">{place.name}</span>
       </header>
       <div className="globe-wrap">
@@ -68,12 +68,8 @@ export function EarthPanel({ place, now }: { place: Place; now: number }) {
         />
       </div>
       <div className="panel-readout">
-        <div className="big-time mono">
-          {pad(parts.hour)}:{pad(parts.minute)}
-          <span className="secs">:{pad(parts.second)}</span>
-        </div>
         <div className="sub">
-          Civil time · {zoneLabel(tz, now)} · {tz}
+          Blue hand: civil time ({zoneLabel(tz, now)}, {tz}). Gold dot: solar time. Gold arc: daylight.
         </div>
         <dl className="facts">
           <div>
@@ -110,9 +106,11 @@ export function EarthPanel({ place, now }: { place: Place; now: number }) {
 }
 
 /**
- * 24-hour dial, noon at the top, midnight at the bottom, clockwise.
- * Outer ticks are civil time; the inner track carries the Sun at local
- * apparent solar time. Both are calibrated in hours.
+ * 24-hour dial, noon at the top, midnight at the bottom, clockwise, so the
+ * daytime half sits above the globe. Calibrated in hours: a numeral every
+ * hour, minute ticks every 15 minutes. The hour hand (civil time) ends in a
+ * window that shows the time; the gold dot on the inner track is local
+ * apparent solar time; the gold arc is daylight.
  */
 function HourDial({
   civilHours,
@@ -132,9 +130,10 @@ function HourDial({
   const S = 400
   const c = S / 2
   const rGlobe = GLOBE_FRACTION * c
-  const rIn = rGlobe + 10
-  const rOut = Math.min(c - 6, rGlobe + 34)
-  const rTrack = rGlobe + 5
+  const rTrack = rGlobe + 6
+  const rTicksIn = rGlobe + 14
+  const rOut = rGlobe + 24
+  const rNum = rOut + 13
   const ang = (h: number) => ((h / 24) * 2 + 1) * Math.PI
   const pt = (h: number, r: number) => [c + r * Math.sin(ang(h)), c - r * Math.cos(ang(h))] as const
 
@@ -149,37 +148,55 @@ function HourDial({
   const ticks = []
   for (let q = 0; q < 96; q++) {
     const h = q / 4
-    const major = q % 4 === 0
+    const hourTick = q % 4 === 0
     const [x0, y0] = pt(h, rOut)
-    const [x1, y1] = pt(h, rOut - (major ? 9 : 4))
-    ticks.push(<line key={q} x1={x0} y1={y0} x2={x1} y2={y1} className={major ? 'dial-tick major' : 'dial-tick'} />)
+    const [x1, y1] = pt(h, hourTick ? rTicksIn : rOut - 4)
+    ticks.push(<line key={q} x1={x0} y1={y0} x2={x1} y2={y1} className={hourTick ? (h % 6 === 0 ? 'dial-tick major' : 'dial-tick hour') : 'dial-tick'} />)
+  }
+
+  // Window at the hand tip; numerals it would cover are hidden (no overlap)
+  const tip = pt(civilHours, rNum)
+  const winW = 50
+  const winH = 20
+  const covered = (h: number) => {
+    const [x, y] = pt(h, rNum)
+    return Math.abs(x - tip[0]) < winW / 2 + 9 && Math.abs(y - tip[1]) < winH / 2 + 7
   }
   const labels = []
-  for (let h = 0; h < 24; h += 3) {
-    const [x, y] = pt(h, rOut - 18)
+  for (let h = 0; h < 24; h++) {
+    if (covered(h)) continue
+    const [x, y] = pt(h, rNum)
     labels.push(
-      <text key={h} x={x} y={y} className="dial-label" textAnchor="middle" dominantBaseline="central">
+      <text key={h} x={x} y={y} className={h % 6 === 0 ? 'dial-label major' : 'dial-label'} textAnchor="middle" dominantBaseline="central">
         {String(h).padStart(2, '0')}
       </text>,
     )
   }
-  const [hx0, hy0] = pt(civilHours, rIn - 4)
-  const [hx1, hy1] = pt(civilHours, rOut + 2)
+  const [hx0, hy0] = pt(civilHours, rGlobe + 2)
+  const [hx1, hy1] = pt(civilHours, rNum - winH / 2 - 2)
   const [sx, sy] = pt(solarHours, rTrack)
-  const daylight = polar === 'day' ? 'full' : polar === 'night' ? null : sunrise !== null && sunset !== null ? arc(sunrise, sunset, rOut - 1) : null
+  const daylight = polar === 'day' ? 'full' : polar === 'night' ? null : sunrise !== null && sunset !== null ? arc(sunrise, sunset, rOut - 2) : null
+  const hh = Math.floor(civilHours)
+  const mm = Math.floor((civilHours - hh) * 60)
 
   return (
     <svg className="dial" viewBox={`0 0 ${S} ${S}`} aria-hidden="true">
+      {daylight === 'full' ? <circle cx={c} cy={c} r={rOut - 2} className="dial-day" /> : daylight && <path d={daylight} className="dial-day" />}
       <circle cx={c} cy={c} r={rOut} className="dial-ring" />
-      {daylight === 'full' ? <circle cx={c} cy={c} r={rOut - 1} className="dial-day" /> : daylight && <path d={daylight} className="dial-day" />}
       {ticks}
       {labels}
-      {noon !== null && <line x1={pt(noon, rOut + 1)[0]} y1={pt(noon, rOut + 1)[1]} x2={pt(noon, rOut - 9)[0]} y2={pt(noon, rOut - 9)[1]} className="dial-noon" />}
-      {sunrise !== null && <circle cx={pt(sunrise, rOut - 1)[0]} cy={pt(sunrise, rOut - 1)[1]} r={2.4} className="dial-rise" />}
-      {sunset !== null && <circle cx={pt(sunset, rOut - 1)[0]} cy={pt(sunset, rOut - 1)[1]} r={2.4} className="dial-rise" />}
+      {noon !== null && <line x1={pt(noon, rOut + 1)[0]} y1={pt(noon, rOut + 1)[1]} x2={pt(noon, rTicksIn)[0]} y2={pt(noon, rTicksIn)[1]} className="dial-noon" />}
+      {sunrise !== null && <circle cx={pt(sunrise, rOut - 2)[0]} cy={pt(sunrise, rOut - 2)[1]} r={2.6} className="dial-rise" />}
+      {sunset !== null && <circle cx={pt(sunset, rOut - 2)[0]} cy={pt(sunset, rOut - 2)[1]} r={2.6} className="dial-rise" />}
       <circle cx={c} cy={c} r={rTrack} className="dial-track" />
-      <circle cx={sx} cy={sy} r={4.2} className="dial-sun" />
+      <circle cx={sx} cy={sy} r={4.5} className="dial-sun" />
       <line x1={hx0} y1={hy0} x2={hx1} y2={hy1} className="dial-hand" />
+      <g className="dial-window" transform={`translate(${tip[0]}, ${tip[1]})`}>
+        <rect x={-winW / 2} y={-winH / 2} width={winW} height={winH} rx={winH / 2} />
+        <text x={0} y={0.5} textAnchor="middle" dominantBaseline="central">
+          {String(hh).padStart(2, '0')}:{String(mm).padStart(2, '0')}
+        </text>
+      </g>
       <circle cx={c} cy={c} r={3.2} className="observer-dot" />
       <circle cx={c} cy={c} r={8} className="observer-ring" />
     </svg>

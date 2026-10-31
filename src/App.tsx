@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { PLANET_BY_ID, YEAR_SCALES, type YearPlanetId } from './astro/bodies'
 import { calendarScale, yearScale } from './astro/clockScales'
 import { approximatePlace, isValidTimeZone, type Place } from './astro/places'
-import { browserTimeZone, civilParts, dayOfYear, MONTH_NAMES, zonedToUtc, zoneOffsetMs } from './astro/time'
+import { browserTimeZone, civilParts, dayOfYear, zonedToUtc, zoneOffsetMs } from './astro/time'
 import { Orrery } from './render/Orrery'
 import { loadTextures, type TextureKey, type TextureSet } from './render/textures'
 import { renderThumbnails } from './render/thumbnails'
@@ -12,10 +12,9 @@ import { MoonPanel } from './ui/MoonPanel'
 import { PlanetSelector } from './ui/PlanetSelector'
 import { TimeControls } from './ui/TimeControls'
 import { useClockState, useSimNow } from './ui/hooks'
+import { Reading } from './ui/Reading'
 import { simClock } from './sim/clock'
 
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const pad = (n: number) => String(n).padStart(2, '0')
 
 export type ViewMode = 'full' | 'ambient' | 'orrery' | 'earth' | 'moon'
 const PLANET_IDS: YearPlanetId[] = ['jupiter', 'saturn', 'uranus', 'neptune']
@@ -169,38 +168,18 @@ export default function App(props: CelestialClockProps = {}) {
 
       {showControls && <LocationPicker place={place} onChange={setPlace} onUseDevice={requestDevice} geoStatus={geo} />}
 
-      {showTelemetry && (
-        <section className={`telemetry ${view === 'earth' || view === 'moon' ? 'single' : ''}`} aria-label="Earth and Moon telemetry">
-          {view !== 'moon' && <EarthPanel place={place} now={now} />}
-          {view !== 'earth' && <MoonPanel place={place} now={now} />}
-        </section>
-      )}
+      <div className="side">
+        {view !== 'earth' && view !== 'moon' && <Reading parts={parts} doy={doy} zone={zoneLabel(tz, now)} yearPlanet={yearPlanet} />}
+        {showTelemetry && (
+          <section className={`telemetry ${view === 'earth' || view === 'moon' ? 'single' : ''}`} aria-label="Earth and Moon telemetry">
+            {view !== 'moon' && <EarthPanel place={place} now={now} />}
+            {view !== 'earth' && <MoonPanel place={place} now={now} />}
+          </section>
+        )}
+      </div>
 
       {showOrrery && (
         <section className="orrery-section" aria-label="Solar system clock">
-          <div className="readouts">
-            <div className="readout readout-date">
-              <span className="readout-label">Date · Earth</span>
-              <span className="readout-value">
-                {parts.day} {MONTH_NAMES[parts.month - 1]}
-              </span>
-              <span className="readout-sub mono">
-                {WEEKDAYS[parts.weekday]} · day {doy} · {pad(parts.hour)}:{pad(parts.minute)} {zoneLabel(tz, now)}
-              </span>
-            </div>
-            <div className="readout readout-year">
-              <span className="readout-label">Year · {planet.name}</span>
-              <span className="readout-value mono gold">{parts.year}</span>
-              <span className="readout-sub">
-                {YEAR_SCALES[yearPlanet].labelInterval === 1 ? 'Labelled yearly' : `Labelled every ${YEAR_SCALES[yearPlanet].labelInterval}`}
-                <span className="wide-only">
-                  {' '}
-                  · scale {yScale.fromYear}–{yScale.toYear}
-                </span>
-              </span>
-            </div>
-          </div>
-
           <div className="orrery-canvas">
             {textures ? (
               <Orrery
@@ -225,7 +204,9 @@ export default function App(props: CelestialClockProps = {}) {
 
           {view === 'full' && (
             <p className="scale-note">
-              Directions are exact; distances are compressed and planet sizes enlarged for legibility. Calendar in {tz}.
+              The green hand reads the day and month on the calendar ring; the gold hand reads the year on {planet.name}’s orbit (scale {yScale.fromYear}–{yScale.toYear},
+              labelled {YEAR_SCALES[yearPlanet].labelInterval === 1 ? 'every year' : `every ${YEAR_SCALES[yearPlanet].labelInterval} years`}). Directions are exact; distances are
+              compressed and planet sizes enlarged.
             </p>
           )}
         </section>

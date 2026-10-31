@@ -14,7 +14,7 @@ import { usePanelTextures } from './panelTextures'
  * by the Sun's computed direction, sweeps across the globe.
  */
 
-export const EARTH_CAMERA_DISTANCE = 5.2
+export const EARTH_CAMERA_DISTANCE = 6.4
 export const EARTH_FOV = 30
 
 const KEYS = ['earthDay', 'earthNight', 'earthRough'] as const

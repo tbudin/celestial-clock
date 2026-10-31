@@ -35,7 +35,7 @@ export function MoonPanel({ place, now }: { place: Place; now: number }) {
   return (
     <article className="panel" aria-label="Moon telemetry">
       <header className="panel-head">
-        <span className="panel-kicker">Moon · lunar cycle</span>
+        <span className="panel-kicker">Lunar cycle · the Moon</span>
         <span className="panel-place">{below ? 'Below the horizon' : `${m.altitude.toFixed(0)}° up, ${COMPASS[Math.round(m.azimuth / 45) % 8]}`}</span>
       </header>
       <div className="globe-wrap">

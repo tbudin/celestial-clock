@@ -5,6 +5,7 @@ import { PLANETS, PLANET_BY_ID, type PlanetId, type YearPlanetId } from '../astr
 import type { CalendarScale, YearScale } from '../astro/clockScales'
 import { normaliseAngle } from '../astro/ephemeris'
 import { sampleOrbit } from '../geometry/projection'
+import { DISPLAY_RADIUS, SUN_DISPLAY_RADIUS } from './planetFactory'
 import { simClock } from '../sim/clock'
 
 /**
@@ -29,6 +30,21 @@ export interface AlignmentReport {
   earth: HandReport & { dayIndex: number; month: number; day: number }
   year: HandReport & { planet: YearPlanetId; year: number }
   orbitOffsetsPx: Record<string, number>
+  labels: LabelReport
+}
+
+interface LabelReport {
+  visible: number
+  /** Pairs of visible labels whose boxes overlap */
+  overlaps: string[]
+  /** Visible labels covering a planet or the Sun */
+  onBodies: string[]
+  /** Visible labels crossing a clock hand */
+  onHands: string[]
+  /** Labels poking outside the orrery */
+  clipped: string[]
+  dateWindow: string
+  yearWindow: string
 }
 
 interface HandReport {
@@ -101,6 +117,56 @@ export function installVerifier(ctx: Ctx) {
     return -1
   }
 
+  const labelReport = (): LabelReport => {
+    const layer = document.querySelector('.label-layer')
+    const base = layer?.getBoundingClientRect()
+    const els = Array.from(document.querySelectorAll<HTMLElement>('.label-layer [data-label]')).filter((e) => e.dataset.visible === 'true')
+    const boxes = els.map((e) => {
+      const r = e.getBoundingClientRect()
+      return { id: e.dataset.label!, x0: r.left - base!.left, y0: r.top - base!.top, x1: r.right - base!.left, y1: r.bottom - base!.top }
+    })
+    const overlaps: string[] = []
+    for (let a = 0; a < boxes.length; a++)
+      for (let b = a + 1; b < boxes.length; b++) {
+        const A = boxes[a]
+        const B = boxes[b]
+        if (A.x0 < B.x1 && B.x0 < A.x1 && A.y0 < B.y1 && B.y0 < A.y1) overlaps.push(`${A.id}/${B.id}`)
+      }
+    const zoom = (ctx.camera as THREE.OrthographicCamera).zoom
+    const bodies = [{ id: 'sun', c: toPx(new THREE.Vector3()), r: SUN_DISPLAY_RADIUS * zoom }]
+    for (const p of PLANETS) {
+      const w = new THREE.Vector3()
+      ctx.objects[p.id].root.getWorldPosition(w)
+      bodies.push({ id: p.id, c: toPx(w), r: DISPLAY_RADIUS[p.id] * zoom })
+    }
+    const onBodies: string[] = []
+    const onHands: string[] = []
+    const clipped: string[] = []
+    const sun = toPx(new THREE.Vector3())
+    const hands = [handEnd(ctx.earthHand.current), handEnd(ctx.yearHand.current)].map((v) => toPx(v))
+    for (const b of boxes) {
+      if (b.x0 < -0.5 || b.y0 < -0.5 || b.x1 > ctx.size.width + 0.5 || b.y1 > ctx.size.height + 0.5) clipped.push(b.id)
+      for (const d of bodies) {
+        const nx = Math.max(b.x0, Math.min(d.c.x, b.x1))
+        const ny = Math.max(b.y0, Math.min(d.c.y, b.y1))
+        if (Math.hypot(nx - d.c.x, ny - d.c.y) < d.r) onBodies.push(`${b.id}@${d.id}`)
+      }
+      if (b.id.endsWith('pill')) continue // windows sit on their own hand's tip
+      hands.forEach((h, i) => {
+        for (let k = 0; k <= 200; k++) {
+          const x = sun.x + ((h.x - sun.x) * k) / 200
+          const y = sun.y + ((h.y - sun.y) * k) / 200
+          if (x > b.x0 && x < b.x1 && y > b.y0 && y < b.y1) {
+            onHands.push(`${b.id}@${i === 0 ? 'earth' : 'year'}-hand`)
+            break
+          }
+        }
+      })
+    }
+    const text = (id: string) => document.querySelector<HTMLElement>(`.label-layer [data-label="${id}"]`)?.textContent ?? ''
+    return { visible: boxes.length, overlaps, onBodies, onHands, clipped, dateWindow: text('date-pill'), yearWindow: text('year-pill') }
+  }
+
   window.__celestialClock = {
     verify: () => {
       const t = simClock.now()
@@ -121,7 +187,9 @@ export function installVerifier(ctx: Ctx) {
         ctx.objects[p.id].root.getWorldPosition(w)
         orbitOffsetsPx[p.id] = Number(orbitDistancePx(p.id, toPx(w), t).toFixed(3))
       }
+      const labels = labelReport()
       return {
+        labels,
         viewport: { ...ctx.size },
         earth: { ...earth, dayIndex, month: tick?.month ?? -1, day: tick?.day ?? -1 },
         year: { ...year, planet: ctx.yearPlanet, year: ctx.yearScale.markers[yi]?.year ?? -1 },

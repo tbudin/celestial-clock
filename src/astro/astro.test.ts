@@ -126,6 +126,10 @@ describe('year scales', () => {
       }
       expect(total).toBeLessThan(360)
       expect(ys.markers.find((m) => m.current)?.year).toBe(2026)
+      // Starts at the current year and only looks ahead
+      expect(ys.fromYear).toBe(2026)
+      expect(ys.markers[0].current).toBe(true)
+      expect(ys.toYear).toBeGreaterThan(2026 + 8)
     })
   }
   it('Jupiter year markers are not evenly spaced', () => {

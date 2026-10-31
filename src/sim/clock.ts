@@ -87,3 +87,8 @@ export class SimClock {
 }
 
 export const simClock = new SimClock()
+
+// Test hook: lets the automated visual check start fast playback
+if (typeof window !== 'undefined') {
+  ;(window as unknown as { __celestialClockSim?: (s: SpeedId) => void }).__celestialClockSim = (s) => simClock.setSpeed(s)
+}

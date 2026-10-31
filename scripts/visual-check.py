@@ -36,6 +36,12 @@ def check(name, report, expect=None):
             failures.append(f"{name}: {hand} centre is {r['centreToHandPx']:.2f}px off its hand")
         if not r["planetOnHand"]:
             failures.append(f"{name}: {hand} planet is not between Sun and hand tip")
+    L = report["labels"]
+    for k in ("overlaps", "onBodies", "onHands", "clipped"):
+        if L[k]:
+            failures.append(f"{name}: labels {k}: {L[k][:4]}")
+    if not L["dateWindow"] or not L["yearWindow"]:
+        failures.append(f"{name}: hand windows missing")
     for pid, d in report["orbitOffsetsPx"].items():
         if d > TOLERANCE_PX:
             failures.append(f"{name}: {pid} is {d:.2f}px off its orbit path")
@@ -45,6 +51,12 @@ def check(name, report, expect=None):
             failures.append(f"{name}: Earth hand reads {e['month']}/{e['day']}, expected {expect['month']}/{expect['day']}")
         if report["year"]["year"] != expect["year"]:
             failures.append(f"{name}: year hand reads {report['year']['year']}, expected {expect['year']}")
+        months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+        want = f"{expect['day']} {months[expect['month'] - 1]}"
+        if L["dateWindow"] != want:
+            failures.append(f"{name}: date window shows {L['dateWindow']!r}, expected {want!r}")
+        if L["yearWindow"] != str(expect["year"]):
+            failures.append(f"{name}: year window shows {L['yearWindow']!r}, expected {expect['year']}")
 
 
 with sync_playwright() as p:
@@ -87,6 +99,29 @@ with sync_playwright() as p:
         print(label, planet, json.dumps(report))
         check(f"{label}/{planet}", report, expect)
     ctx.close()
+
+    # Labels while the planets move: sample during fast playback at phone and desktop sizes
+    for vname, (w, h, dpr) in (("iphone", (390, 844, 2)), ("desktop", (1440, 900, 1))):
+        for planet in ("jupiter", "saturn", "uranus", "neptune"):
+            ctx = browser.new_context(viewport={"width": w, "height": h}, device_scale_factor=dpr, timezone_id="Asia/Singapore")
+            page = ctx.new_page()
+            page.goto(f"{BASE}?view=orrery&planet={planet}", wait_until="load", timeout=90000)
+            page.wait_for_function("window.__celestialClock !== undefined", timeout=30000)
+            page.evaluate("document.querySelector('.orrery-canvas') && 0")
+            # 1 month per second, via the clock API exposed on the page
+            page.evaluate("window.__celestialClockSim && window.__celestialClockSim('month')")
+            worst = 0
+            for i in range(10):
+                page.wait_for_timeout(450)
+                r = page.evaluate("window.__celestialClock.verify().labels")
+                bad = r["overlaps"] + r["onBodies"] + r["onHands"] + r["clipped"]
+                worst = max(worst, len(bad))
+                if bad:
+                    failures.append(f"{vname}/{planet} playback sample {i}: {bad[:4]}")
+                    page.screenshot(path=f"{OUT}/fail-{vname}-{planet}-{i}.png")
+                    break
+            print(vname, planet, "playback label samples ok" if worst == 0 else "playback label FAIL")
+            ctx.close()
 
     # Observer tests: four cities at fixed instants, Earth and Moon panels
     cities = {
